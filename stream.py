@@ -10,6 +10,8 @@ import gi
 import cv2
 import argparse
 
+from qcar.q_essential import Camera2D
+
 # import required library like Gstreamer and GstreamerRtspServer
 gi.require_version('Gst', '1.0')
 gi.require_version('GstRtspServer', '1.0')
@@ -20,9 +22,9 @@ from gi.repository import Gst, GstRtspServer, GObject
 class SensorFactory(GstRtspServer.RTSPMediaFactory):
     def __init__(self, **properties):
         super(SensorFactory, self).__init__(**properties)
-        self.cap = cv2.VideoCapture(opt.device_id)
+        # self.cap = cv2.VideoCapture(opt.device_id)
+        self.fps= opt.fps
         self.number_frames = 0
-        self.fps = opt.fps
         self.duration = 1 / self.fps * Gst.SECOND  # duration of a frame in nanoseconds
         self.launch_string = 'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME ' \
                              'caps=video/x-raw,format=BGR,width={},height={},framerate={}/1 ' \
@@ -30,30 +32,38 @@ class SensorFactory(GstRtspServer.RTSPMediaFactory):
                              '! x264enc speed-preset=ultrafast tune=zerolatency ' \
                              '! rtph264pay config-interval=1 name=pay0 pt=96' \
                              .format(opt.image_width, opt.image_height, self.fps)
+        self.image_height=opt.image_height
+        self.image_width= opt.image_width
+        self.device_id = opt.device_id
+        self.cap = Camera2D(camera_id="3", frame_width=self.image_width, frame_height=self.image_height,
+                                 frame_rate=self.fps)
     # method to capture the video feed from the camera and push it to the
     # streaming buffer.
     def on_need_data(self, src, length):
-        if self.cap.isOpened():
-            ret, frame = self.cap.read()
-            if ret:
-                # It is better to change the resolution of the camera 
-                # instead of changing the image shape as it affects the image quality.
-                frame = cv2.resize(frame, (opt.image_width, opt.image_height), \
-                    interpolation = cv2.INTER_LINEAR)
-                data = frame.tostring()
-                buf = Gst.Buffer.new_allocate(None, len(data), None)
-                buf.fill(0, data)
-                buf.duration = self.duration
-                timestamp = self.number_frames * self.duration
-                buf.pts = buf.dts = int(timestamp)
-                buf.offset = timestamp
-                self.number_frames += 1
-                retval = src.emit('push-buffer', buf)
-                print('pushed buffer, frame {}, duration {} ns, durations {} s'.format(self.number_frames,
-                                                                                       self.duration,
-                                                                                       self.duration / Gst.SECOND))
-                if retval != Gst.FlowReturn.OK:
-                    print(retval)
+        
+        self.cap.read()
+            
+        # It is better to change the resolution of the camera 
+        # instead of changing the image shape as it affects the image quality.
+        frame = self.cap.image_data.copy()
+        cv2.imshow("RTSP View", frame)
+        cv2.waitKey(1)
+        frame = cv2.resize(frame, (opt.image_width, opt.image_height), \
+            interpolation = cv2.INTER_LINEAR)
+        data = frame.tostring()
+        buf = Gst.Buffer.new_allocate(None, len(data), None)
+        buf.fill(0, data)
+        buf.duration = self.duration
+        timestamp = self.number_frames * self.duration
+        buf.pts = buf.dts = int(timestamp)
+        buf.offset = timestamp
+        self.number_frames += 1
+        retval = src.emit('push-buffer', buf)
+        print('pushed buffer, frame {}, duration {} ns, durations {} s'.format(self.number_frames,
+                                                                               self.duration,
+                                                                               self.duration / Gst.SECOND))
+        if retval != Gst.FlowReturn.OK:
+            print(retval)
     # attach the launch string to the override method
     def do_create_element(self, url):
         return Gst.parse_launch(self.launch_string)
