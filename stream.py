@@ -9,6 +9,7 @@ Created on Mon Jan  20 02:07:13 2019
 import gi
 import cv2
 import argparse
+import numpy as np
 
 from qcar.q_essential import Camera2D
 
@@ -46,7 +47,6 @@ class SensorFactory(GstRtspServer.RTSPMediaFactory):
     # method to capture the video feed from the camera and push it to the
     # streaming buffer.
     def on_need_data(self, src, length):
-        import numpy as np
         self.cap3.read()
         self.cap2.read() 
         self.cap1.read() 
