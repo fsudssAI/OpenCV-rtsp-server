@@ -41,7 +41,7 @@ class SensorFactory(GstRtspServer.RTSPMediaFactory):
                                  frame_rate=self.fps) 
         self.cap1 = Camera2D(camera_id="1", frame_width=self.image_width, frame_height=self.image_height,
                                  frame_rate=self.fps)
-        self.cap4 = Camera2D(camera_id="0", frame_width=self.image_width, frame_height=self.image_height,
+        self.cap0 = Camera2D(camera_id="0", frame_width=self.image_width, frame_height=self.image_height,
                                  frame_rate=self.fps)                         
     # method to capture the video feed from the camera and push it to the
     # streaming buffer.
@@ -50,22 +50,24 @@ class SensorFactory(GstRtspServer.RTSPMediaFactory):
         self.cap3.read()
         self.cap2.read() 
         self.cap1.read() 
-        self.cap4.read()    
+        self.cap0.read()    
         # It is better to change the resolution of the camera 
         # instead of changing the image shape as it affects the image quality.
         frame3 = self.cap3.image_data.copy()
         frame2 = self.cap2.image_data.copy()
         frame1 = self.cap1.image_data.copy()
-        frame4 = self.cap4.image_data.copy()
-        frame3 = cv2.resize(frame3, (320, 240), \
+        frame0 = self.cap0.image_data.copy()
+        width=int(opt.image_width/2)
+        height=int(opt.image_height/2)
+        frame3 = cv2.resize(frame3, (width, height), \
             interpolation = cv2.INTER_LINEAR)
-        frame2 = cv2.resize(frame2, (320, 240), \
+        frame2 = cv2.resize(frame2, (width, height), \
             interpolation = cv2.INTER_LINEAR)
-        frame1 = cv2.resize(frame1, (320, 240), \
+        frame1 = cv2.resize(frame1, (width, height), \
             interpolation = cv2.INTER_LINEAR)
-        frame4 = cv2.resize(frame4, (320, 240), \
+        frame0 = cv2.resize(frame0, (width, height), \
             interpolation = cv2.INTER_LINEAR)
-        framerl = np.hstack((frame2, frame4))
+        framerl = np.hstack((frame2, frame0))
         framefb = np.hstack((frame3,frame1))
         frame = np.vstack((framefb,framerl))
         data = frame.tostring()
