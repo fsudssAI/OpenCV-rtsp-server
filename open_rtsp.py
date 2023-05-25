@@ -10,7 +10,7 @@ import cv2
 
 #scale_percent = 200 # percent of original size
 cv2.namedWindow("RTSP View", cv2.WINDOW_NORMAL)
-cap = cv2.VideoCapture("rtsp://192.168.2.13:8554/video_stream")
+cap = cv2.VideoCapture("rtsp://192.168.50.23:8554/video_stream")
 while True:
     
     ret, frame = cap.read()
