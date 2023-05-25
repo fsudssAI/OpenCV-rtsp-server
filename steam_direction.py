@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # import necessary argumnets 
+from turtle import pos
 import gi
 import cv2
 import argparse
@@ -15,8 +16,30 @@ gi.require_version('Gst', '1.0')
 gi.require_version('GstRtspServer', '1.0')
 from gi.repository import Gst, GstRtspServer, GObject
 from geometry_msgs.msg import PoseStamped
+
 # Sensor Factory class which inherits the GstRtspServer base class and add
 # properties to it.
+
+class RosSubscriber():
+    def __init__(self) :
+        #subscribe to rostopic to get camera position 
+        self.ctrl_sub = rospy.Subscriber("/human_remote/camera_pos", PoseStamped, self.ctrl_callback, queue_size=10)   
+        self.position=[1,1,1,1]  
+        rospy.init_node('camera_pos')
+
+    def ctrl_callback(self, data):
+        # self.position=data
+        position=[]
+        position.append(data.pose.orientation.x)  # front
+        position.append(data.pose.orientation.y)  # rear
+        position.append(data.pose.orientation.z)  # left
+        position.append(data.pose.orientation.w)  # right
+        self.position=position
+
+    def get_position(self):
+        return self.position
+
+
 class SensorFactory(GstRtspServer.RTSPMediaFactory):
     def __init__(self, **properties):
         super(SensorFactory, self).__init__(**properties)
@@ -40,14 +63,11 @@ class SensorFactory(GstRtspServer.RTSPMediaFactory):
         self.cap1 = Camera2D(camera_id="1", frame_width=self.image_width, frame_height=self.image_height,
                                  frame_rate=self.fps)
         self.cap0 = Camera2D(camera_id="0", frame_width=self.image_width, frame_height=self.image_height,
-                                 frame_rate=self.fps)        
-        self.ctrl_sub = rospy.Subscriber("/human_remote/camera_pos", PoseStamped, self.ctrl_callback, queue_size=10)   
-        self.position=[1,1,1,1]              
+                                 frame_rate=self.fps)       
+                    
     # method to capture the video feed from the camera and push it to the
     # streaming buffer.
-    def ctrl_callback(self, data):
-        # self.position=data
-        print(data.pose)
+
     def on_need_data(self, src, length):
         self.cap3.read()
         self.cap2.read() 
@@ -55,30 +75,42 @@ class SensorFactory(GstRtspServer.RTSPMediaFactory):
         self.cap0.read()    
         # It is better to change the resolution of the camera 
         # instead of changing the image shape as it affects the image quality.
-        frame3 = self.cap3.image_data.copy()
-        frame2 = self.cap2.image_data.copy()
-        frame1 = self.cap1.image_data.copy()
-        frame0 = self.cap0.image_data.copy()
-        width=int(opt.image_width/3)
+        frame_front = self.cap3.image_data.copy()  # front
+        frame_left = self.cap2.image_data.copy()  # left
+        frame_rear = self.cap1.image_data.copy()  # rear
+        frame_right = self.cap0.image_data.copy()  # right
+        width=int(opt.image_width/2)
         height=int(opt.image_height/2)
-        frame3 = cv2.resize(frame3, (width, height), \
+        frame_front = cv2.resize(frame_front, (width, height), \
             interpolation = cv2.INTER_LINEAR)
-        frame2 = cv2.resize(frame2, (width, height), \
+        frame_left = cv2.resize(frame_left, (width, height), \
             interpolation = cv2.INTER_LINEAR)
-        frame1 = cv2.resize(frame1, (width, height), \
+        frame_rear = cv2.resize(frame_rear, (width, height), \
             interpolation = cv2.INTER_LINEAR)
-        frame0 = cv2.resize(frame0, (width, height), \
+        frame_right = cv2.resize(frame_right, (width, height), \
             interpolation = cv2.INTER_LINEAR)
-        black=np.zeros((512, 512, 1), dtype = "uint8")
-        black== cv2.resize(black, (width, height), \
+        framefb=frame_front
+        position= rosSub.get_position()
+        if(int(position[0])==0):  # not forward
+            framefb=frame_rear
+            frame_left,frame_right=frame_right,frame_left
+            if(int(position[3])==0):
+                frame_left=np.zeros((height,width,3), np.uint8)
+            if(int(position[2])==0):
+                frame_right=np.zeros((height,width, 3), np.uint8)
+        elif(int(position[1])==0):
+            framefb=frame_front
+            if(int(position[2])==0):
+                frame_left=np.zeros((height,width,3), np.uint8)
+            if(int(position[3])==0):
+                frame_right=np.zeros((height,width, 3), np.uint8)
+        # framefb = np.vstack((frame_front,frame_rear))
+        framefb = cv2.resize(framefb, (width, height), \
             interpolation = cv2.INTER_LINEAR)
-        if(self.position[0]==0):frame3=black
-        elif(self.position[1]==0):frame1=black
-        elif(self.position[2]==0):frame2=black
-        elif(self.position[3]==0):frame0=black
-        # framerl = np.hstack((frame2, frame0))
-        framefb = np.hstack((frame3,frame1))
-        frame = np.vstack((frame2,framefb,frame0))
+
+        frame = np.hstack((frame_left,framefb,frame_right))
+        frame = cv2.resize(frame, (2*width, 2*height), \
+            interpolation = cv2.INTER_LINEAR)
         data = frame.tostring()
         buf = Gst.Buffer.new_allocate(None, len(data), None)
         buf.fill(0, data)
@@ -122,6 +154,8 @@ parser.add_argument("--image_width", required=True, help="video frame width", ty
 parser.add_argument("--image_height", required=True, help="video frame height", type = int)
 parser.add_argument("--port", default=8554, help="port to stream video", type = int)
 parser.add_argument("--stream_uri", default = "/video_stream", help="rtsp video stream uri")
+parser.add_argument("__name")
+parser.add_argument("__log")
 opt = parser.parse_args()
 
 try:
@@ -129,6 +163,7 @@ try:
 except ValueError:
     pass
 
+rosSub= RosSubscriber()
 # initializing the threads and running the stream on loop.
 GObject.threads_init()
 Gst.init(None)
